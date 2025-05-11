@@ -1,1 +1,144 @@
-# puzzle
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>シンプルぷよぷよ</title>
+  <style>
+    body {
+      background: #222;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    canvas {
+      background: #000;
+      border: 4px solid #fff;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="180" height="360"></canvas>
+
+  <script>
+    const COLS = 6;
+    const ROWS = 12;
+    const SIZE = 30;
+
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+
+    let current = {
+      x: Math.floor(COLS / 2),
+      y: 0,
+    };
+
+    function drawGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (grid[y][x]) {
+            drawBlock(x, y, "#ff69b4");
+          }
+        }
+      }
+      drawBlock(current.x, current.y, "#ff69b4");
+    }
+
+    function drawBlock(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x * SIZE, y * SIZE, SIZE, SIZE);
+      ctx.strokeStyle = "#fff";
+      ctx.strokeRect(x * SIZE, y * SIZE, SIZE, SIZE);
+    }
+
+    function move(dx) {
+      const nx = current.x + dx;
+      if (nx >= 0 && nx < COLS && !grid[current.y][nx]) {
+        current.x = nx;
+        drawGrid();
+      }
+    }
+
+    function fall() {
+      const ny = current.y + 1;
+      if (ny >= ROWS || grid[ny][current.x]) {
+        grid[current.y][current.x] = 1;
+        checkMatch();
+        current = { x: Math.floor(COLS / 2), y: 0 };
+        if (grid[0][current.x]) {
+          alert("ゲームオーバー！");
+          location.reload();
+        }
+      } else {
+        current.y = ny;
+      }
+      drawGrid();
+    }
+
+    function checkMatch() {
+      const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+      const toDelete = [];
+
+      function dfs(x, y, group) {
+        if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+        if (grid[y][x] !== 1 || visited[y][x]) return;
+        visited[y][x] = true;
+        group.push([x, y]);
+        dfs(x + 1, y, group);
+        dfs(x - 1, y, group);
+        dfs(x, y + 1, group);
+        dfs(x, y - 1, group);
+      }
+
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (grid[y][x] === 1 && !visited[y][x]) {
+            const group = [];
+            dfs(x, y, group);
+            if (group.length >= 4) {
+              toDelete.push(...group);
+            }
+          }
+        }
+      }
+
+      for (const [x, y] of toDelete) {
+        grid[y][x] = 0;
+      }
+
+      if (toDelete.length > 0) {
+        applyGravity();
+        checkMatch(); // 連鎖もどき
+      }
+    }
+
+    function applyGravity() {
+      for (let x = 0; x < COLS; x++) {
+        for (let y = ROWS - 1; y >= 0; y--) {
+          if (grid[y][x] === 0) {
+            for (let k = y - 1; k >= 0; k--) {
+              if (grid[k][x] === 1) {
+                grid[y][x] = 1;
+                grid[k][x] = 0;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft") move(-1);
+      if (e.key === "ArrowRight") move(1);
+      if (e.key === "ArrowDown") fall();
+    });
+
+    setInterval(fall, 500);
+    drawGrid();
+  </script>
+</body>
+</html>
