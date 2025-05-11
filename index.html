@@ -1,144 +1,121 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <title>シンプルぷよぷよ</title>
+  <meta charset="UTF-8">
+  <title>ぷよぷよもどき</title>
   <style>
     body {
-      background: #222;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
+      background: #111;
+      color: #fff;
+      font-family: sans-serif;
+      text-align: center;
+      margin: 0;
     }
     canvas {
-      background: #000;
-      border: 4px solid #fff;
+      background: #222;
+      margin-top: 20px;
+    }
+    .controls {
+      margin-top: 10px;
+    }
+    .controls button {
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 18px;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+    }
+    .controls button:active {
+      background: #888;
     }
   </style>
 </head>
 <body>
-  <canvas id="game" width="180" height="360"></canvas>
-
+  <h1>ぷよぷよ風ゲーム</h1>
+  <canvas id="game" width="120" height="240"></canvas>
+  <div class="controls">
+    <button onclick="move(-1)">←</button>
+    <button onclick="rotate()">⟳</button>
+    <button onclick="move(1)">→</button>
+    <button onclick="drop()">↓</button>
+  </div>
   <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
     const COLS = 6;
     const ROWS = 12;
-    const SIZE = 30;
-
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
-
+    const SIZE = 20;
     const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+    const colors = ['#000', 'red', 'blue', 'green', 'yellow'];
+    let piece = createPiece();
 
-    let current = {
-      x: Math.floor(COLS / 2),
-      y: 0,
-    };
+    function createPiece() {
+      return {
+        x: 2,
+        y: 0,
+        color: Math.floor(Math.random() * 4) + 1
+      };
+    }
 
-    function drawGrid() {
+    function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // draw field
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
-          if (grid[y][x]) {
-            drawBlock(x, y, "#ff69b4");
-          }
+          drawCell(x, y, grid[y][x]);
         }
       }
-      drawBlock(current.x, current.y, "#ff69b4");
+      // draw piece
+      drawCell(piece.x, piece.y, piece.color);
     }
 
-    function drawBlock(x, y, color) {
-      ctx.fillStyle = color;
-      ctx.fillRect(x * SIZE, y * SIZE, SIZE, SIZE);
-      ctx.strokeStyle = "#fff";
-      ctx.strokeRect(x * SIZE, y * SIZE, SIZE, SIZE);
+    function drawCell(x, y, color) {
+      if (color === 0) return;
+      ctx.fillStyle = colors[color];
+      ctx.fillRect(x * SIZE, y * SIZE, SIZE - 1, SIZE - 1);
     }
 
-    function move(dx) {
-      const nx = current.x + dx;
-      if (nx >= 0 && nx < COLS && !grid[current.y][nx]) {
-        current.x = nx;
-        drawGrid();
+    function move(dir) {
+      const nx = piece.x + dir;
+      if (nx >= 0 && nx < COLS && grid[piece.y][nx] === 0) {
+        piece.x = nx;
+        draw();
       }
     }
 
-    function fall() {
-      const ny = current.y + 1;
-      if (ny >= ROWS || grid[ny][current.x]) {
-        grid[current.y][current.x] = 1;
-        checkMatch();
-        current = { x: Math.floor(COLS / 2), y: 0 };
-        if (grid[0][current.x]) {
-          alert("ゲームオーバー！");
-          location.reload();
-        }
+    function rotate() {
+      // ダミー：このシンプル版では回転なし（本来は2個1組で回転）
+      alert("回転は未実装です（今は1個だけ）");
+    }
+
+    function drop() {
+      const ny = piece.y + 1;
+      if (ny < ROWS && grid[ny][piece.x] === 0) {
+        piece.y = ny;
       } else {
-        current.y = ny;
+        // 固定
+        grid[piece.y][piece.x] = piece.color;
+        piece = createPiece();
       }
-      drawGrid();
+      draw();
     }
 
-    function checkMatch() {
-      const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-      const toDelete = [];
-
-      function dfs(x, y, group) {
-        if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
-        if (grid[y][x] !== 1 || visited[y][x]) return;
-        visited[y][x] = true;
-        group.push([x, y]);
-        dfs(x + 1, y, group);
-        dfs(x - 1, y, group);
-        dfs(x, y + 1, group);
-        dfs(x, y - 1, group);
-      }
-
-      for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-          if (grid[y][x] === 1 && !visited[y][x]) {
-            const group = [];
-            dfs(x, y, group);
-            if (group.length >= 4) {
-              toDelete.push(...group);
-            }
-          }
-        }
-      }
-
-      for (const [x, y] of toDelete) {
-        grid[y][x] = 0;
-      }
-
-      if (toDelete.length > 0) {
-        applyGravity();
-        checkMatch(); // 連鎖もどき
-      }
+    function tick() {
+      drop();
+      setTimeout(tick, 800);
     }
 
-    function applyGravity() {
-      for (let x = 0; x < COLS; x++) {
-        for (let y = ROWS - 1; y >= 0; y--) {
-          if (grid[y][x] === 0) {
-            for (let k = y - 1; k >= 0; k--) {
-              if (grid[k][x] === 1) {
-                grid[y][x] = 1;
-                grid[k][x] = 0;
-                break;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowLeft") move(-1);
-      if (e.key === "ArrowRight") move(1);
-      if (e.key === "ArrowDown") fall();
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') move(-1);
+      if (e.key === 'ArrowRight') move(1);
+      if (e.key === 'ArrowDown') drop();
+      if (e.key === 'ArrowUp') rotate();
     });
 
-    setInterval(fall, 500);
-    drawGrid();
+    draw();
+    tick();
   </script>
 </body>
 </html>
