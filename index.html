@@ -1,31 +1,30 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>ぷよぷよもどき</title>
+  <meta charset="UTF-8" />
+  <title>ぷよぷよ風ゲーム（2個＆連鎖あり）</title>
   <style>
     body {
       background: #111;
       color: #fff;
       font-family: sans-serif;
       text-align: center;
-      margin: 0;
     }
     canvas {
       background: #222;
-      margin-top: 20px;
+      margin-top: 10px;
     }
     .controls {
       margin-top: 10px;
     }
     .controls button {
-      padding: 10px 20px;
+      padding: 10px 15px;
       margin: 5px;
       font-size: 18px;
       background: #444;
-      color: #fff;
+      color: white;
       border: none;
-      border-radius: 8px;
+      border-radius: 6px;
     }
     .controls button:active {
       background: #888;
@@ -34,7 +33,7 @@
 </head>
 <body>
   <h1>ぷよぷよ風ゲーム</h1>
-  <canvas id="game" width="120" height="240"></canvas>
+  <canvas id="game" width="180" height="360"></canvas>
   <div class="controls">
     <button onclick="move(-1)">←</button>
     <button onclick="rotate()">⟳</button>
@@ -42,72 +41,154 @@
     <button onclick="drop()">↓</button>
   </div>
   <script>
+    const COLS = 6, ROWS = 12, SIZE = 30;
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
-    const COLS = 6;
-    const ROWS = 12;
-    const SIZE = 20;
     const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    const colors = ['#000', 'red', 'blue', 'green', 'yellow'];
-    let piece = createPiece();
+    const colors = ['#000', '#f00', '#0af', '#0f0', '#ff0'];
 
-    function createPiece() {
+    let pair = createPair();
+    let interval = setInterval(tick, 500);
+
+    function createPair() {
+      const c1 = Math.floor(Math.random() * 4) + 1;
+      const c2 = Math.floor(Math.random() * 4) + 1;
       return {
         x: 2,
         y: 0,
-        color: Math.floor(Math.random() * 4) + 1
+        blocks: [
+          { dx: 0, dy: 0, color: c1 },
+          { dx: 0, dy: -1, color: c2 }
+        ],
+        rotation: 0
       };
     }
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // draw field
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
           drawCell(x, y, grid[y][x]);
         }
       }
-      // draw piece
-      drawCell(piece.x, piece.y, piece.color);
+      pair.blocks.forEach(b => {
+        drawCell(pair.x + b.dx, pair.y + b.dy, b.color);
+      });
     }
 
     function drawCell(x, y, color) {
       if (color === 0) return;
       ctx.fillStyle = colors[color];
-      ctx.fillRect(x * SIZE, y * SIZE, SIZE - 1, SIZE - 1);
+      ctx.fillRect(x * SIZE, y * SIZE, SIZE - 2, SIZE - 2);
     }
 
-    function move(dir) {
-      const nx = piece.x + dir;
-      if (nx >= 0 && nx < COLS && grid[piece.y][nx] === 0) {
-        piece.x = nx;
+    function canMove(dx, dy) {
+      return pair.blocks.every(b => {
+        const x = pair.x + b.dx + dx;
+        const y = pair.y + b.dy + dy;
+        return x >= 0 && x < COLS && y < ROWS && (y < 0 || grid[y][x] === 0);
+      });
+    }
+
+    function move(dx) {
+      if (canMove(dx, 0)) {
+        pair.x += dx;
         draw();
       }
     }
 
-    function rotate() {
-      // ダミー：このシンプル版では回転なし（本来は2個1組で回転）
-      alert("回転は未実装です（今は1個だけ）");
-    }
-
     function drop() {
-      const ny = piece.y + 1;
-      if (ny < ROWS && grid[ny][piece.x] === 0) {
-        piece.y = ny;
+      if (canMove(0, 1)) {
+        pair.y++;
       } else {
-        // 固定
-        grid[piece.y][piece.x] = piece.color;
-        piece = createPiece();
+        fixToGrid();
+        removeMatches();
+        pair = createPair();
+        if (!canMove(0, 0)) {
+          alert('Game Over');
+          clearInterval(interval);
+        }
       }
       draw();
     }
 
-    function tick() {
-      drop();
-      setTimeout(tick, 800);
+    function rotate() {
+      const b = pair.blocks[1];
+      pair.rotation = (pair.rotation + 1) % 4;
+      switch (pair.rotation) {
+        case 0: b.dx = 0; b.dy = -1; break;
+        case 1: b.dx = 1; b.dy = 0; break;
+        case 2: b.dx = 0; b.dy = 1; break;
+        case 3: b.dx = -1; b.dy = 0; break;
+      }
+      if (!canMove(0, 0)) {
+        // 戻す
+        pair.rotation = (pair.rotation + 3) % 4;
+        rotate(); // 再調整
+      }
+      draw();
     }
 
-    document.addEventListener('keydown', (e) => {
+    function fixToGrid() {
+      pair.blocks.forEach(b => {
+        const x = pair.x + b.dx;
+        const y = pair.y + b.dy;
+        if (y >= 0) grid[y][x] = b.color;
+      });
+    }
+
+    function removeMatches() {
+      let visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+      let toClear = [];
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (grid[y][x] !== 0 && !visited[y][x]) {
+            let match = [];
+            dfs(x, y, grid[y][x], visited, match);
+            if (match.length >= 4) {
+              toClear.push(...match);
+            }
+          }
+        }
+      }
+      toClear.forEach(([x, y]) => grid[y][x] = 0);
+      if (toClear.length > 0) {
+        applyGravity();
+        setTimeout(removeMatches, 200); // 連鎖処理
+      }
+    }
+
+    function dfs(x, y, color, visited, match) {
+      if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
+      if (visited[y][x] || grid[y][x] !== color) return;
+      visited[y][x] = true;
+      match.push([x, y]);
+      dfs(x+1, y, color, visited, match);
+      dfs(x-1, y, color, visited, match);
+      dfs(x, y+1, color, visited, match);
+      dfs(x, y-1, color, visited, match);
+    }
+
+    function applyGravity() {
+      for (let x = 0; x < COLS; x++) {
+        for (let y = ROWS - 2; y >= 0; y--) {
+          if (grid[y][x] !== 0 && grid[y+1][x] === 0) {
+            let ny = y;
+            while (ny + 1 < ROWS && grid[ny+1][x] === 0) {
+              grid[ny+1][x] = grid[ny][x];
+              grid[ny][x] = 0;
+              ny++;
+            }
+          }
+        }
+      }
+    }
+
+    function tick() {
+      drop();
+    }
+
+    document.addEventListener('keydown', e => {
       if (e.key === 'ArrowLeft') move(-1);
       if (e.key === 'ArrowRight') move(1);
       if (e.key === 'ArrowDown') drop();
@@ -115,7 +196,6 @@
     });
 
     draw();
-    tick();
   </script>
 </body>
 </html>
