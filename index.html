@@ -1,100 +1,115 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <title>ぷよぷよ風ゲーム（2個＆連鎖あり）</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ぷよぷよ風ゲーム</title>
   <style>
     body {
-      background: #111;
-      color: #fff;
+      background: #000;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: white;
       font-family: sans-serif;
-      text-align: center;
     }
     canvas {
       background: #222;
       margin-top: 10px;
     }
     .controls {
+      display: flex;
+      gap: 10px;
       margin-top: 10px;
     }
-    .controls button {
-      padding: 10px 15px;
-      margin: 5px;
-      font-size: 18px;
+    button {
+      font-size: 20px;
+      padding: 10px;
+      border-radius: 10px;
+      border: none;
       background: #444;
       color: white;
-      border: none;
-      border-radius: 6px;
     }
-    .controls button:active {
-      background: #888;
+    button:active {
+      background: #666;
     }
   </style>
 </head>
 <body>
   <h1>ぷよぷよ風ゲーム</h1>
-  <canvas id="game" width="180" height="360"></canvas>
+  <canvas id="game" width="300" height="600"></canvas>
   <div class="controls">
-    <button onclick="move(-1)">←</button>
-    <button onclick="rotate()">⟳</button>
-    <button onclick="move(1)">→</button>
-    <button onclick="drop()">↓</button>
+    <button id="left">←</button>
+    <button id="rotate">⟳</button>
+    <button id="right">→</button>
+    <button id="down">↓</button>
   </div>
+
   <script>
-    const COLS = 6, ROWS = 12, SIZE = 30;
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
+    const COLS = 10, ROWS = 20, SIZE = 30;
     const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    const colors = ['#000', '#f00', '#0af', '#0f0', '#ff0'];
+    const colors = ['red', 'blue', 'green', 'yellow'];
 
-    let pair = createPair();
-    let interval = setInterval(tick, 500);
+    function randomColor() {
+      return Math.floor(Math.random() * colors.length) + 1;
+    }
 
     function createPair() {
-      const c1 = Math.floor(Math.random() * 4) + 1;
-      const c2 = Math.floor(Math.random() * 4) + 1;
       return {
-        x: 2,
+        x: 4,
         y: 0,
-        blocks: [
-          { dx: 0, dy: 0, color: c1 },
-          { dx: 0, dy: -1, color: c2 }
-        ],
+        cells: [randomColor(), randomColor()], // 上・下
         rotation: 0
       };
     }
+
+    let pair = createPair();
+    let interval = setInterval(drop, 500);
+    let fastDropInterval = null;
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
-          drawCell(x, y, grid[y][x]);
+          if (grid[y][x]) drawCell(x, y, grid[y][x]);
         }
       }
-      pair.blocks.forEach(b => {
-        drawCell(pair.x + b.dx, pair.y + b.dy, b.color);
-      });
+      // 操作中のぷよ
+      const [a, b] = getPairCells(pair);
+      drawCell(a.x, a.y, a.color);
+      drawCell(b.x, b.y, b.color);
     }
 
-    function drawCell(x, y, color) {
-      if (color === 0) return;
-      ctx.fillStyle = colors[color];
-      ctx.fillRect(x * SIZE, y * SIZE, SIZE - 2, SIZE - 2);
+    function drawCell(x, y, colorIndex) {
+      ctx.fillStyle = colors[colorIndex - 1];
+      ctx.fillRect(x * SIZE, y * SIZE, SIZE, SIZE);
+      ctx.strokeStyle = 'black';
+      ctx.strokeRect(x * SIZE, y * SIZE, SIZE, SIZE);
     }
 
-    function canMove(dx, dy) {
-      return pair.blocks.every(b => {
-        const x = pair.x + b.dx + dx;
-        const y = pair.y + b.dy + dy;
-        return x >= 0 && x < COLS && y < ROWS && (y < 0 || grid[y][x] === 0);
-      });
-    }
-
-    function move(dx) {
-      if (canMove(dx, 0)) {
-        pair.x += dx;
-        draw();
+    function getPairCells(p) {
+      const [c1, c2] = p.cells;
+      let dx = 0, dy = 0;
+      switch (p.rotation % 4) {
+        case 0: dy = -1; break; // 上
+        case 1: dx = 1; break;  // 右
+        case 2: dy = 1; break;  // 下
+        case 3: dx = -1; break; // 左
       }
+      return [
+        { x: p.x, y: p.y, color: c2 },
+        { x: p.x + dx, y: p.y + dy, color: c1 }
+      ];
+    }
+
+    function canMove(dx, dy, rotationOffset = 0) {
+      const [a, b] = getPairCells({ ...pair, x: pair.x + dx, y: pair.y + dy, rotation: pair.rotation + rotationOffset });
+      return [a, b].every(c =>
+        c.x >= 0 && c.x < COLS && c.y >= 0 && c.y < ROWS && !grid[c.y]?.[c.x]
+      );
     }
 
     function drop() {
@@ -102,6 +117,7 @@
         pair.y++;
       } else {
         fixToGrid();
+        applyGravity(); // 落下後に空中ぷよを落とす
         removeMatches();
         pair = createPair();
         if (!canMove(0, 0)) {
@@ -112,88 +128,92 @@
       draw();
     }
 
-    function rotate() {
-      const b = pair.blocks[1];
-      pair.rotation = (pair.rotation + 1) % 4;
-      switch (pair.rotation) {
-        case 0: b.dx = 0; b.dy = -1; break;
-        case 1: b.dx = 1; b.dy = 0; break;
-        case 2: b.dx = 0; b.dy = 1; break;
-        case 3: b.dx = -1; b.dy = 0; break;
-      }
-      if (!canMove(0, 0)) {
-        // 戻す
-        pair.rotation = (pair.rotation + 3) % 4;
-        rotate(); // 再調整
-      }
-      draw();
-    }
-
     function fixToGrid() {
-      pair.blocks.forEach(b => {
-        const x = pair.x + b.dx;
-        const y = pair.y + b.dy;
-        if (y >= 0) grid[y][x] = b.color;
-      });
-    }
-
-    function removeMatches() {
-      let visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-      let toClear = [];
-      for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-          if (grid[y][x] !== 0 && !visited[y][x]) {
-            let match = [];
-            dfs(x, y, grid[y][x], visited, match);
-            if (match.length >= 4) {
-              toClear.push(...match);
-            }
-          }
-        }
+      for (const c of getPairCells(pair)) {
+        if (grid[c.y] && grid[c.y][c.x] === 0) grid[c.y][c.x] = c.color;
       }
-      toClear.forEach(([x, y]) => grid[y][x] = 0);
-      if (toClear.length > 0) {
-        applyGravity();
-        setTimeout(removeMatches, 200); // 連鎖処理
-      }
-    }
-
-    function dfs(x, y, color, visited, match) {
-      if (x < 0 || x >= COLS || y < 0 || y >= ROWS) return;
-      if (visited[y][x] || grid[y][x] !== color) return;
-      visited[y][x] = true;
-      match.push([x, y]);
-      dfs(x+1, y, color, visited, match);
-      dfs(x-1, y, color, visited, match);
-      dfs(x, y+1, color, visited, match);
-      dfs(x, y-1, color, visited, match);
     }
 
     function applyGravity() {
-      for (let x = 0; x < COLS; x++) {
+      let moved;
+      do {
+        moved = false;
         for (let y = ROWS - 2; y >= 0; y--) {
-          if (grid[y][x] !== 0 && grid[y+1][x] === 0) {
-            let ny = y;
-            while (ny + 1 < ROWS && grid[ny+1][x] === 0) {
-              grid[ny+1][x] = grid[ny][x];
-              grid[ny][x] = 0;
-              ny++;
+          for (let x = 0; x < COLS; x++) {
+            if (grid[y][x] && !grid[y + 1][x]) {
+              grid[y + 1][x] = grid[y][x];
+              grid[y][x] = 0;
+              moved = true;
             }
           }
         }
+      } while (moved);
+    }
+
+    function removeMatches() {
+      let matched = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          const color = grid[y][x];
+          if (!color) continue;
+          const directions = [[1,0],[0,1],[-1,0],[0,-1]];
+          let stack = [[x,y]];
+          let visited = new Set([`${x},${y}`]);
+          for (let i = 0; i < stack.length; i++) {
+            const [cx, cy] = stack[i];
+            for (const [dx, dy] of directions) {
+              const nx = cx + dx, ny = cy + dy;
+              if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && grid[ny][nx] === color && !visited.has(`${nx},${ny}`)) {
+                visited.add(`${nx},${ny}`);
+                stack.push([nx, ny]);
+              }
+            }
+          }
+          if (stack.length >= 4) {
+            for (const [mx, my] of stack) matched[my][mx] = true;
+          }
+        }
       }
+      let found = false;
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (matched[y][x]) {
+            grid[y][x] = 0;
+            found = true;
+          }
+        }
+      }
+      if (found) applyGravity();
     }
 
-    function tick() {
-      drop();
-    }
-
-    document.addEventListener('keydown', e => {
-      if (e.key === 'ArrowLeft') move(-1);
-      if (e.key === 'ArrowRight') move(1);
-      if (e.key === 'ArrowDown') drop();
-      if (e.key === 'ArrowUp') rotate();
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' && canMove(-1, 0)) pair.x--;
+      if (e.key === 'ArrowRight' && canMove(1, 0)) pair.x++;
+      if (e.key === 'ArrowUp' && canMove(0, 0, 1)) pair.rotation++;
+      if (e.key === 'ArrowDown' && !fastDropInterval) {
+        fastDropInterval = setInterval(() => drop(), 50);
+      }
+      draw();
     });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'ArrowDown' && fastDropInterval) {
+        clearInterval(fastDropInterval);
+        fastDropInterval = null;
+      }
+    });
+
+    // スマホ用ボタン
+    document.getElementById('left').onclick = () => { if (canMove(-1, 0)) pair.x--; draw(); };
+    document.getElementById('right').onclick = () => { if (canMove(1, 0)) pair.x++; draw(); };
+    document.getElementById('rotate').onclick = () => { if (canMove(0, 0, 1)) pair.rotation++; draw(); };
+    document.getElementById('down').ontouchstart = () => {
+      if (!fastDropInterval) fastDropInterval = setInterval(() => drop(), 50);
+    };
+    document.getElementById('down').ontouchend = () => {
+      clearInterval(fastDropInterval);
+      fastDropInterval = null;
+    };
 
     draw();
   </script>
