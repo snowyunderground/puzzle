@@ -1,221 +1,209 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ぷよぷよ風ゲーム</title>
   <style>
     body {
-      background: #000;
       margin: 0;
+      background: #000;
       display: flex;
-      flex-direction: column;
+      justify-content: center;
       align-items: center;
-      color: white;
-      font-family: sans-serif;
+      height: 100vh;
+      overflow: hidden;
     }
     canvas {
       background: #222;
-      margin-top: 10px;
+      touch-action: none;
     }
-    .controls {
-      display: flex;
-      gap: 10px;
-      margin-top: 10px;
-    }
-    button {
-      font-size: 20px;
-      padding: 10px;
-      border-radius: 10px;
-      border: none;
-      background: #444;
+    #overlay {
+      position: absolute;
+      top: 10px;
       color: white;
-    }
-    button:active {
-      background: #666;
+      text-align: center;
+      width: 100%;
+      font-family: sans-serif;
+      font-size: 18px;
     }
   </style>
 </head>
 <body>
-  <h1>ぷよぷよ風ゲーム</h1>
-  <canvas id="game" width="300" height="600"></canvas>
-  <div class="controls">
-    <button id="left">←</button>
-    <button id="rotate">⟳</button>
-    <button id="right">→</button>
-    <button id="down">↓</button>
-  </div>
+  <div id="overlay">ぷよぷよ風ゲーム</div>
+  <canvas id="game" width="240" height="480"></canvas>
 
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
-    const COLS = 10, ROWS = 20, SIZE = 30;
-    const grid = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
-    const colors = ['red', 'blue', 'green', 'yellow'];
+
+    const COLS = 6;
+    const ROWS = 12;
+    const BLOCK_SIZE = 40;
+    const FALL_INTERVAL = 800;
+    const FAST_FALL_INTERVAL = 100;
+    const COLORS = ['red', 'green', 'blue', 'yellow', 'purple'];
+
+    let board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+
+    let currentPair = null;
+    let lastFall = 0;
+    let gameOver = false;
+    let fastFall = false;
 
     function randomColor() {
-      return Math.floor(Math.random() * colors.length) + 1;
+      return COLORS[Math.floor(Math.random() * COLORS.length)];
     }
 
-    function createPair() {
-      return {
-        x: 4,
-        y: 0,
-        cells: [randomColor(), randomColor()], // 上・下
-        rotation: 0
+    function spawnPair() {
+      const color1 = randomColor();
+      const color2 = randomColor();
+      const pair = {
+        blocks: [
+          { x: 2, y: 0, color: color1 },
+          { x: 2, y: 1, color: color2 },
+        ],
+        rotation: 0,
       };
+      // 判定（上部にブロックあればゲームオーバー）
+      if (board[0][2] || board[1][2]) {
+        gameOver = true;
+        alert('Game Over');
+        return;
+      }
+      currentPair = pair;
     }
-
-    let pair = createPair();
-    let interval = setInterval(drop, 500);
-    let fastDropInterval = null;
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // board
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
-          if (grid[y][x]) drawCell(x, y, grid[y][x]);
+          const color = board[y][x];
+          if (color) drawBlock(x, y, color);
         }
       }
-      // 操作中のぷよ
-      const [a, b] = getPairCells(pair);
-      drawCell(a.x, a.y, a.color);
-      drawCell(b.x, b.y, b.color);
-    }
-
-    function drawCell(x, y, colorIndex) {
-      ctx.fillStyle = colors[colorIndex - 1];
-      ctx.fillRect(x * SIZE, y * SIZE, SIZE, SIZE);
-      ctx.strokeStyle = 'black';
-      ctx.strokeRect(x * SIZE, y * SIZE, SIZE, SIZE);
-    }
-
-    function getPairCells(p) {
-      const [c1, c2] = p.cells;
-      let dx = 0, dy = 0;
-      switch (p.rotation % 4) {
-        case 0: dy = -1; break; // 上
-        case 1: dx = 1; break;  // 右
-        case 2: dy = 1; break;  // 下
-        case 3: dx = -1; break; // 左
+      // current pair
+      if (currentPair) {
+        for (const b of currentPair.blocks) {
+          drawBlock(b.x, b.y, b.color);
+        }
       }
-      return [
-        { x: p.x, y: p.y, color: c2 },
-        { x: p.x + dx, y: p.y + dy, color: c1 }
-      ];
     }
 
-    function canMove(dx, dy, rotationOffset = 0) {
-      const [a, b] = getPairCells({ ...pair, x: pair.x + dx, y: pair.y + dy, rotation: pair.rotation + rotationOffset });
-      return [a, b].every(c =>
-        c.x >= 0 && c.x < COLS && c.y >= 0 && c.y < ROWS && !grid[c.y]?.[c.x]
+    function drawBlock(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+    }
+
+    function update(time) {
+      if (gameOver) return;
+
+      const interval = fastFall ? FAST_FALL_INTERVAL : FALL_INTERVAL;
+      if (time - lastFall > interval) {
+        if (!movePair(0, 1)) {
+          placePair();
+          checkFall();
+          spawnPair();
+        }
+        lastFall = time;
+      }
+      draw();
+      requestAnimationFrame(update);
+    }
+
+    function movePair(dx, dy) {
+      const newBlocks = currentPair.blocks.map(b => ({ x: b.x + dx, y: b.y + dy, color: b.color }));
+      if (isValid(newBlocks)) {
+        currentPair.blocks = newBlocks;
+        return true;
+      }
+      return false;
+    }
+
+    function isValid(blocks) {
+      return blocks.every(b =>
+        b.x >= 0 && b.x < COLS && b.y >= 0 && b.y < ROWS && !board[b.y][b.x]
       );
     }
 
-    function drop() {
-      if (canMove(0, 1)) {
-        pair.y++;
-      } else {
-        fixToGrid();
-        applyGravity(); // 落下後に空中ぷよを落とす
-        removeMatches();
-        pair = createPair();
-        if (!canMove(0, 0)) {
-          alert('Game Over');
-          clearInterval(interval);
+    function placePair() {
+      for (const b of currentPair.blocks) {
+        if (b.y >= 0 && b.y < ROWS && b.x >= 0 && b.x < COLS) {
+          board[b.y][b.x] = b.color;
         }
       }
-      draw();
     }
 
-    function fixToGrid() {
-      for (const c of getPairCells(pair)) {
-        if (grid[c.y] && grid[c.y][c.x] === 0) grid[c.y][c.x] = c.color;
-      }
-    }
-
-    function applyGravity() {
-      let moved;
+    function checkFall() {
+      let changed;
       do {
-        moved = false;
+        changed = false;
         for (let y = ROWS - 2; y >= 0; y--) {
           for (let x = 0; x < COLS; x++) {
-            if (grid[y][x] && !grid[y + 1][x]) {
-              grid[y + 1][x] = grid[y][x];
-              grid[y][x] = 0;
-              moved = true;
+            if (board[y][x] && !board[y + 1][x]) {
+              board[y + 1][x] = board[y][x];
+              board[y][x] = null;
+              changed = true;
             }
           }
         }
-      } while (moved);
+      } while (changed);
     }
 
-    function removeMatches() {
-      let matched = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-      for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-          const color = grid[y][x];
-          if (!color) continue;
-          const directions = [[1,0],[0,1],[-1,0],[0,-1]];
-          let stack = [[x,y]];
-          let visited = new Set([`${x},${y}`]);
-          for (let i = 0; i < stack.length; i++) {
-            const [cx, cy] = stack[i];
-            for (const [dx, dy] of directions) {
-              const nx = cx + dx, ny = cy + dy;
-              if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && grid[ny][nx] === color && !visited.has(`${nx},${ny}`)) {
-                visited.add(`${nx},${ny}`);
-                stack.push([nx, ny]);
-              }
-            }
-          }
-          if (stack.length >= 4) {
-            for (const [mx, my] of stack) matched[my][mx] = true;
-          }
-        }
-      }
-      let found = false;
-      for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-          if (matched[y][x]) {
-            grid[y][x] = 0;
-            found = true;
-          }
-        }
-      }
-      if (found) applyGravity();
+    function rotatePair() {
+      const [pivot, other] = currentPair.blocks;
+      const dx = other.x - pivot.x;
+      const dy = other.y - pivot.y;
+      const newX = pivot.x - dy;
+      const newY = pivot.y + dx;
+      const rotated = [
+        pivot,
+        { x: newX, y: newY, color: other.color },
+      ];
+      if (isValid(rotated)) currentPair.blocks = rotated;
     }
 
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft' && canMove(-1, 0)) pair.x--;
-      if (e.key === 'ArrowRight' && canMove(1, 0)) pair.x++;
-      if (e.key === 'ArrowUp' && canMove(0, 0, 1)) pair.rotation++;
-      if (e.key === 'ArrowDown' && !fastDropInterval) {
-        fastDropInterval = setInterval(() => drop(), 50);
-      }
-      draw();
+    document.addEventListener('keydown', e => {
+      if (gameOver) return;
+      if (e.key === 'ArrowLeft') movePair(-1, 0);
+      if (e.key === 'ArrowRight') movePair(1, 0);
+      if (e.key === 'ArrowDown') fastFall = true;
+      if (e.key === 'z' || e.key === 'Z') rotatePair();
     });
 
-    document.addEventListener('keyup', (e) => {
-      if (e.key === 'ArrowDown' && fastDropInterval) {
-        clearInterval(fastDropInterval);
-        fastDropInterval = null;
+    document.addEventListener('keyup', e => {
+      if (e.key === 'ArrowDown') fastFall = false;
+    });
+
+    // スマホ対応タッチ操作（仮簡易）
+    let touchStartX = 0;
+    let touchStartY = 0;
+    canvas.addEventListener('touchstart', e => {
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+    });
+
+    canvas.addEventListener('touchend', e => {
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - touchStartX;
+      const dy = touch.clientY - touchStartY;
+
+      if (Math.abs(dx) > Math.abs(dy)) {
+        if (dx > 20) movePair(1, 0);
+        if (dx < -20) movePair(-1, 0);
+      } else {
+        if (dy > 20) fastFall = true;
+        if (dy < -20) rotatePair();
       }
     });
 
-    // スマホ用ボタン
-    document.getElementById('left').onclick = () => { if (canMove(-1, 0)) pair.x--; draw(); };
-    document.getElementById('right').onclick = () => { if (canMove(1, 0)) pair.x++; draw(); };
-    document.getElementById('rotate').onclick = () => { if (canMove(0, 0, 1)) pair.rotation++; draw(); };
-    document.getElementById('down').ontouchstart = () => {
-      if (!fastDropInterval) fastDropInterval = setInterval(() => drop(), 50);
-    };
-    document.getElementById('down').ontouchend = () => {
-      clearInterval(fastDropInterval);
-      fastDropInterval = null;
-    };
+    canvas.addEventListener('touchcancel', () => (fastFall = false));
+    canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
 
-    draw();
+    spawnPair();
+    requestAnimationFrame(update);
   </script>
 </body>
 </html>
