@@ -57,8 +57,8 @@
   <div class="controls">
     <div class="dpad">
       <button id="left">←</button>
-      <button id="down">↓</button>
       <button id="right">→</button>
+      <button id="down">↓</button>
     </div>
     <div class="buttons">
       <button id="rotate">⟳</button>
@@ -146,56 +146,32 @@
     }
 
     function removeChains() {
-      let chains;
-      do {
-        chains = [];
-        const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-        const directions = [[1,0],[0,1],[-1,0],[0,-1]];
-        for (let y = 0; y < ROWS; y++) {
-          for (let x = 0; x < COLS; x++) {
-            if (!board[y][x] || visited[y][x]) continue;
-            const color = board[y][x];
-            const queue = [[x, y]];
-            const chain = [];
-            while (queue.length) {
-              const [cx, cy] = queue.pop();
-              if (visited[cy][cx]) continue;
-              visited[cy][cx] = true;
-              chain.push([cx, cy]);
-              for (const [dx, dy] of directions) {
-                const nx = cx + dx;
-                const ny = cy + dy;
-                if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS &&
-                    !visited[ny][nx] && board[ny][nx] === color) {
-                  queue.push([nx, ny]);
-                }
+      const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+      const directions = [[1,0],[0,1],[-1,0],[0,-1]];
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (!board[y][x] || visited[y][x]) continue;
+          const color = board[y][x];
+          const queue = [[x, y]];
+          const chain = [];
+          while (queue.length) {
+            const [cx, cy] = queue.pop();
+            if (visited[cy][cx]) continue;
+            visited[cy][cx] = true;
+            chain.push([cx, cy]);
+            for (const [dx, dy] of directions) {
+              const nx = cx + dx;
+              const ny = cy + dy;
+              if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && !visited[ny][nx] && board[ny][nx] === color) {
+                queue.push([nx, ny]);
               }
             }
-            if (chain.length >= 4) {
-              chains.push(...chain);
-            }
+          }
+          if (chain.length >= 4) {
+            for (const [cx, cy] of chain) board[cy][cx] = null;
           }
         }
-
-        // 消去処理
-        for (const [x, y] of chains) {
-          board[y][x] = null;
-        }
-
-        // 重力処理：上のぷよを落とす
-        for (let x = 0; x < COLS; x++) {
-          let column = [];
-          for (let y = ROWS - 1; y >= 0; y--) {
-            if (board[y][x]) {
-              column.push(board[y][x]);
-            }
-          }
-          for (let y = ROWS - 1; y >= 0; y--) {
-            board[y][x] = column[ROWS - 1 - y] || null;
-          }
-        }
-
-      } while (chains.length > 0);
+      }
     }
 
     function tick() {
@@ -208,12 +184,30 @@
       draw();
     }
 
-    document.getElementById("left").onclick = () => move(-1, 0);
-    document.getElementById("right").onclick = () => move(1, 0);
-    document.getElementById("down").onmousedown = () => interval = setInterval(() => move(0, 1), 50);
-    document.getElementById("down").onmouseup = () => clearInterval(interval);
-    document.getElementById("rotate").onclick = rotate;
-    document.getElementById("pauseBtn").onclick = () => isPaused = !isPaused;
+    document.getElementById("left").addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      move(-1, 0);
+    });
+    document.getElementById("right").addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      move(1, 0);
+    });
+    document.getElementById("down").addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      interval = setInterval(() => move(0, 1), 50);
+    });
+    document.getElementById("down").addEventListener("touchend", (e) => {
+      e.preventDefault();
+      clearInterval(interval);
+    });
+    document.getElementById("rotate").addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      rotate();
+    });
+    document.getElementById("pauseBtn").addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      isPaused = !isPaused;
+    });
 
     current = newPuyo();
     draw();
