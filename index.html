@@ -7,211 +7,214 @@
   <style>
     body {
       margin: 0;
-      background: #000;
+      background: #222;
       display: flex;
-      justify-content: center;
+      flex-direction: column;
       align-items: center;
-      height: 100vh;
-      overflow: hidden;
+      color: white;
+      font-family: sans-serif;
     }
     canvas {
-      background: #222;
-      touch-action: none;
+      background: #000;
+      margin-top: 10px;
     }
-    #overlay {
-      position: absolute;
-      top: 10px;
+    #controls {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      gap: 10px;
+    }
+    .dpad, .buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .dpad-row {
+      display: flex;
+      justify-content: center;
+      gap: 5px;
+    }
+    button {
+      width: 50px;
+      height: 50px;
+      font-size: 20px;
+      border: none;
+      background: #555;
       color: white;
-      text-align: center;
-      width: 100%;
-      font-family: sans-serif;
-      font-size: 18px;
+      border-radius: 10px;
+    }
+    #pauseBtn {
+      margin-top: 10px;
+      background: #c33;
     }
   </style>
 </head>
 <body>
-  <div id="overlay">ぷよぷよ風ゲーム</div>
-  <canvas id="game" width="240" height="480"></canvas>
+  <h1>ぷよぷよ風ゲーム</h1>
+  <canvas id="game" width="240" height="400"></canvas>
+  <div id="controls">
+    <div class="dpad">
+      <div class="dpad-row"><button id="up">↑</button></div>
+      <div class="dpad-row">
+        <button id="left">←</button>
+        <button id="down">↓</button>
+        <button id="right">→</button>
+      </div>
+    </div>
+    <div class="buttons">
+      <button id="rotate">⟳</button>
+      <button id="pauseBtn">⏸</button>
+    </div>
+  </div>
 
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
+    const COLS = 6, ROWS = 10, SIZE = 40;
+    const COLORS = [
+      'https://i.imgur.com/Kr5JwfV.png', // red
+      'https://i.imgur.com/fFdbCsG.png', // green
+    ];
 
-    const COLS = 6;
-    const ROWS = 12;
-    const BLOCK_SIZE = 40;
-    const FALL_INTERVAL = 800;
-    const FAST_FALL_INTERVAL = 100;
-    const COLORS = ['red', 'green']; // 現在は2色対応
+    let grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    let current, next;
+    let falling = true;
+    let paused = false;
+    let interval;
 
-    const puyoImages = {
-      red: new Image(),
-      green: new Image()
-    };
-    puyoImages.red.src = 'https://i.imgur.com/Kr5JwfV.png';
-    puyoImages.green.src = 'https://i.imgur.com/fFdbCsG.png';
-
-    let board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-
-    let currentPair = null;
-    let lastFall = 0;
-    let gameOver = false;
-    let fastFall = false;
-
-    function randomColor() {
-      return COLORS[Math.floor(Math.random() * COLORS.length)];
-    }
-
-    function spawnPair() {
-      const color1 = randomColor();
-      const color2 = randomColor();
-      const pair = {
-        blocks: [
-          { x: 2, y: 0, color: color1 },
-          { x: 2, y: 1, color: color2 },
-        ],
-        rotation: 0,
-      };
-      if (board[0][2] || board[1][2]) {
-        gameOver = true;
-        alert('Game Over');
-        return;
-      }
-      currentPair = pair;
-    }
+    const images = COLORS.map(src => {
+      const img = new Image();
+      img.src = src;
+      return img;
+    });
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
-          const color = board[y][x];
-          if (color) drawBlock(x, y, color);
+          const color = grid[y][x];
+          if (color != null) ctx.drawImage(images[color], x * SIZE, y * SIZE, SIZE, SIZE);
         }
       }
-      if (currentPair) {
-        for (const b of currentPair.blocks) {
-          drawBlock(b.x, b.y, b.color);
-        }
-      }
-    }
-
-    function drawBlock(x, y, color) {
-      const img = puyoImages[color];
-      if (img?.complete) {
-        ctx.drawImage(img, x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-      } else {
-        ctx.fillStyle = color;
-        ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
-      }
-    }
-
-    function update(time) {
-      if (gameOver) return;
-
-      const interval = fastFall ? FAST_FALL_INTERVAL : FALL_INTERVAL;
-      if (time - lastFall > interval) {
-        if (!movePair(0, 1)) {
-          placePair();
-          checkFall();
-          spawnPair();
-        }
-        lastFall = time;
-      }
-      draw();
-      requestAnimationFrame(update);
-    }
-
-    function movePair(dx, dy) {
-      const newBlocks = currentPair.blocks.map(b => ({ x: b.x + dx, y: b.y + dy, color: b.color }));
-      if (isValid(newBlocks)) {
-        currentPair.blocks = newBlocks;
-        return true;
-      }
-      return false;
-    }
-
-    function isValid(blocks) {
-      return blocks.every(b =>
-        b.x >= 0 && b.x < COLS && b.y >= 0 && b.y < ROWS && !board[b.y][b.x]
-      );
-    }
-
-    function placePair() {
-      for (const b of currentPair.blocks) {
-        if (b.y >= 0 && b.y < ROWS && b.x >= 0 && b.x < COLS) {
-          board[b.y][b.x] = b.color;
+      if (current) {
+        for (const p of current.puyos) {
+          ctx.drawImage(images[p.color], p.x * SIZE, p.y * SIZE, SIZE, SIZE);
         }
       }
     }
 
-    function checkFall() {
-      let changed;
-      do {
-        changed = false;
-        for (let y = ROWS - 2; y >= 0; y--) {
-          for (let x = 0; x < COLS; x++) {
-            if (board[y][x] && !board[y + 1][x]) {
-              board[y + 1][x] = board[y][x];
-              board[y][x] = null;
-              changed = true;
+    function spawn() {
+      const c1 = Math.floor(Math.random() * COLORS.length);
+      const c2 = Math.floor(Math.random() * COLORS.length);
+      current = {
+        puyos: [
+          { x: 2, y: 0, color: c1 },
+          { x: 2, y: 1, color: c2 }
+        ],
+        dir: 0
+      };
+    }
+
+    function move(dx, dy) {
+      if (!current) return;
+      const moved = current.puyos.map(p => ({ ...p, x: p.x + dx, y: p.y + dy }));
+      if (moved.every(p => valid(p.x, p.y))) {
+        current.puyos = moved;
+      } else if (dy === 1) {
+        place();
+        clearLines();
+        spawn();
+      }
+    }
+
+    function rotate() {
+      if (!current) return;
+      const [p1, p2] = current.puyos;
+      const dir = (current.dir + 1) % 4;
+      let newP2;
+      switch (dir) {
+        case 0: newP2 = { x: p1.x, y: p1.y + 1 }; break;
+        case 1: newP2 = { x: p1.x + 1, y: p1.y }; break;
+        case 2: newP2 = { x: p1.x, y: p1.y - 1 }; break;
+        case 3: newP2 = { x: p1.x - 1, y: p1.y }; break;
+      }
+      if (valid(newP2.x, newP2.y)) {
+        current.puyos[1] = { ...newP2, color: p2.color };
+        current.dir = dir;
+      }
+    }
+
+    function valid(x, y) {
+      return x >= 0 && x < COLS && y >= 0 && y < ROWS && (grid[y][x] == null);
+    }
+
+    function place() {
+      for (const p of current.puyos) grid[p.y][p.x] = p.color;
+      current = null;
+    }
+
+    function clearLines() {
+      const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (grid[y][x] != null && !visited[y][x]) {
+            const group = [];
+            floodFill(x, y, grid[y][x], group, visited);
+            if (group.length >= 4) {
+              for (const { x, y } of group) grid[y][x] = null;
             }
           }
         }
-      } while (changed);
-    }
-
-    function rotatePair() {
-      const [pivot, other] = currentPair.blocks;
-      const dx = other.x - pivot.x;
-      const dy = other.y - pivot.y;
-      const newX = pivot.x - dy;
-      const newY = pivot.y + dx;
-      const rotated = [
-        pivot,
-        { x: newX, y: newY, color: other.color },
-      ];
-      if (isValid(rotated)) currentPair.blocks = rotated;
-    }
-
-    document.addEventListener('keydown', e => {
-      if (gameOver) return;
-      if (e.key === 'ArrowLeft') movePair(-1, 0);
-      if (e.key === 'ArrowRight') movePair(1, 0);
-      if (e.key === 'ArrowDown') fastFall = true;
-      if (e.key === 'z' || e.key === 'Z') rotatePair();
-    });
-
-    document.addEventListener('keyup', e => {
-      if (e.key === 'ArrowDown') fastFall = false;
-    });
-
-    let touchStartX = 0;
-    let touchStartY = 0;
-    canvas.addEventListener('touchstart', e => {
-      const touch = e.touches[0];
-      touchStartX = touch.clientX;
-      touchStartY = touch.clientY;
-    });
-
-    canvas.addEventListener('touchend', e => {
-      const touch = e.changedTouches[0];
-      const dx = touch.clientX - touchStartX;
-      const dy = touch.clientY - touchStartY;
-
-      if (Math.abs(dx) > Math.abs(dy)) {
-        if (dx > 20) movePair(1, 0);
-        if (dx < -20) movePair(-1, 0);
-      } else {
-        if (dy > 20) fastFall = true;
-        if (dy < -20) rotatePair();
       }
-    });
+      dropPuyos();
+    }
 
-    canvas.addEventListener('touchcancel', () => (fastFall = false));
-    canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+    function floodFill(x, y, color, group, visited) {
+      if (x < 0 || y < 0 || x >= COLS || y >= ROWS || visited[y][x] || grid[y][x] !== color) return;
+      visited[y][x] = true;
+      group.push({ x, y });
+      floodFill(x + 1, y, color, group, visited);
+      floodFill(x - 1, y, color, group, visited);
+      floodFill(x, y + 1, color, group, visited);
+      floodFill(x, y - 1, color, group, visited);
+    }
 
-    spawnPair();
-    requestAnimationFrame(update);
+    function dropPuyos() {
+      for (let x = 0; x < COLS; x++) {
+        for (let y = ROWS - 1; y > 0; y--) {
+          if (grid[y][x] == null && grid[y - 1][x] != null) {
+            grid[y][x] = grid[y - 1][x];
+            grid[y - 1][x] = null;
+            y = ROWS; // recheck
+          }
+        }
+      }
+    }
+
+    function gameLoop() {
+      if (!paused) move(0, 1);
+      draw();
+    }
+
+    function startGame() {
+      spawn();
+      interval = setInterval(gameLoop, 500);
+    }
+
+    function pauseGame() {
+      paused = !paused;
+      document.getElementById('pauseBtn').textContent = paused ? '▶' : '⏸';
+    }
+
+    document.getElementById('left').onclick = () => move(-1, 0);
+    document.getElementById('right').onclick = () => move(1, 0);
+    document.getElementById('down').onclick = () => move(0, 1);
+    document.getElementById('up').onclick = () => rotate();
+    document.getElementById('rotate').onclick = () => rotate();
+    document.getElementById('pauseBtn').onclick = () => pauseGame();
+
+    window.onload = () => startGame();
   </script>
 </body>
 </html>
