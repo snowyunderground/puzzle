@@ -161,25 +161,31 @@
     function removeChains() {
       const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
       const directions = [[1,0],[0,1],[-1,0],[0,-1]];
-      for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-          if (!board[y][x] || visited[y][x]) continue;
-          const color = board[y][x];
-          const queue = [[x, y]];
-          const chain = [];
-          while (queue.length) {
-            const [cx, cy] = queue.pop();
-            if (visited[cy][cx]) continue;
-            visited[cy][cx] = true;
-            chain.push([cx, cy]);
-            for (const [dx, dy] of directions) {
-              const nx = cx + dx;
-              const ny = cy + dy;
-              if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && !visited[ny][nx] && board[ny][nx] === color) {
-                queue.push([nx, ny]);
-              }
+
+      function checkChain(x, y, color) {
+        const queue = [[x, y]];
+        const chain = [];
+        while (queue.length) {
+          const [cx, cy] = queue.pop();
+          if (visited[cy][cx]) continue;
+          visited[cy][cx] = true;
+          chain.push([cx, cy]);
+          for (const [dx, dy] of directions) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && !visited[ny][nx] && board[ny][nx] === color) {
+              queue.push([nx, ny]);
             }
           }
+        }
+        return chain.length >= 4 ? chain : [];
+      }
+
+      for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+          if (!board[y][x]) continue;
+          const color = board[y][x];
+          const chain = checkChain(x, y, color);
           if (chain.length >= 4) {
             for (const [cx, cy] of chain) board[cy][cx] = null;
           }
@@ -189,11 +195,13 @@
 
     function tick() {
       if (!current || isPaused) return;
+
       const moved = current.blocks.map(b => ({ ...b, y: b.y + 1 }));
       if (valid(moved)) current.blocks = moved;
       else {
         freeze();
       }
+
       draw();
     }
 
