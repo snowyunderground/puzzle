@@ -7,214 +7,217 @@
   <style>
     body {
       margin: 0;
-      background: #222;
+      background: #000;
+      color: #fff;
+      font-family: sans-serif;
+      overflow: hidden;
       display: flex;
       flex-direction: column;
       align-items: center;
-      color: white;
-      font-family: sans-serif;
     }
     canvas {
-      background: #000;
+      background: #222;
       margin-top: 10px;
     }
-    #controls {
+    .controls {
       display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      margin-top: 10px;
-      gap: 10px;
+      justify-content: space-between;
+      width: 100vw;
+      padding: 10px;
+      box-sizing: border-box;
     }
     .dpad, .buttons {
       display: flex;
-      flex-direction: column;
-      gap: 5px;
-    }
-    .dpad-row {
-      display: flex;
+      flex-wrap: wrap;
+      width: 40vw;
+      max-width: 200px;
       justify-content: center;
-      gap: 5px;
+    }
+    .buttons {
+      flex-direction: column;
+      align-items: center;
     }
     button {
-      width: 50px;
-      height: 50px;
-      font-size: 20px;
-      border: none;
-      background: #555;
-      color: white;
+      margin: 5px;
+      padding: 15px 20px;
+      font-size: 1.2em;
       border-radius: 10px;
+      border: none;
+      background: #444;
+      color: #fff;
+      touch-action: manipulation;
     }
     #pauseBtn {
       margin-top: 10px;
-      background: #c33;
     }
   </style>
 </head>
 <body>
-  <h1>ぷよぷよ風ゲーム</h1>
-  <canvas id="game" width="240" height="400"></canvas>
-  <div id="controls">
+  <canvas id="game" width="192" height="384"></canvas>
+  <div class="controls">
     <div class="dpad">
-      <div class="dpad-row"><button id="up">↑</button></div>
-      <div class="dpad-row">
-        <button id="left">←</button>
-        <button id="down">↓</button>
-        <button id="right">→</button>
-      </div>
+      <button id="left">←</button>
+      <button id="down">↓</button>
+      <button id="right">→</button>
     </div>
     <div class="buttons">
       <button id="rotate">⟳</button>
       <button id="pauseBtn">⏸</button>
     </div>
   </div>
-
   <script>
-    const canvas = document.getElementById('game');
-    const ctx = canvas.getContext('2d');
-    const COLS = 6, ROWS = 10, SIZE = 40;
-    const COLORS = [
-      'https://i.imgur.com/Kr5JwfV.png', // red
-      'https://i.imgur.com/fFdbCsG.png', // green
-    ];
-
-    let grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    let current, next;
-    let falling = true;
-    let paused = false;
-    let interval;
-
-    const images = COLORS.map(src => {
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const COLS = 6;
+    const ROWS = 12;
+    const BLOCK_SIZE = 32;
+    const FALL_INTERVAL = 800; // ゆっくりに
+    const COLORS = ["red", "blue", "green", "yellow"];
+    const IMG_URLS = {
+      red: "https://i.imgur.com/Kr5JwfV.png",
+      blue: "https://i.imgur.com/fFdbCsG.png",
+      green: "https://i.imgur.com/Kr5JwfV.png",
+      yellow: "https://i.imgur.com/fFdbCsG.png"
+    };
+    const images = {};
+    for (const color in IMG_URLS) {
       const img = new Image();
-      img.src = src;
-      return img;
-    });
+      img.src = IMG_URLS[color];
+      images[color] = img;
+    }
+
+    let board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    let current, interval, isPaused = false;
+
+    function newPuyo() {
+      const c1 = COLORS[Math.floor(Math.random() * COLORS.length)];
+      const c2 = COLORS[Math.floor(Math.random() * COLORS.length)];
+      return {
+        blocks: [
+          { x: 2, y: 0, color: c1 },
+          { x: 2, y: 1, color: c2 }
+        ],
+        rotation: 0
+      };
+    }
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
-          const color = grid[y][x];
-          if (color != null) ctx.drawImage(images[color], x * SIZE, y * SIZE, SIZE, SIZE);
+          const color = board[y][x];
+          if (color) ctx.drawImage(images[color], x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
         }
       }
       if (current) {
-        for (const p of current.puyos) {
-          ctx.drawImage(images[p.color], p.x * SIZE, p.y * SIZE, SIZE, SIZE);
+        for (const b of current.blocks) {
+          ctx.drawImage(images[b.color], b.x * BLOCK_SIZE, b.y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
         }
       }
-    }
-
-    function spawn() {
-      const c1 = Math.floor(Math.random() * COLORS.length);
-      const c2 = Math.floor(Math.random() * COLORS.length);
-      current = {
-        puyos: [
-          { x: 2, y: 0, color: c1 },
-          { x: 2, y: 1, color: c2 }
-        ],
-        dir: 0
-      };
     }
 
     function move(dx, dy) {
       if (!current) return;
-      const moved = current.puyos.map(p => ({ ...p, x: p.x + dx, y: p.y + dy }));
-      if (moved.every(p => valid(p.x, p.y))) {
-        current.puyos = moved;
-      } else if (dy === 1) {
-        place();
-        clearLines();
-        spawn();
-      }
+      const moved = current.blocks.map(b => ({ ...b, x: b.x + dx, y: b.y + dy }));
+      if (valid(moved)) current.blocks = moved;
     }
 
     function rotate() {
-      if (!current) return;
-      const [p1, p2] = current.puyos;
-      const dir = (current.dir + 1) % 4;
-      let newP2;
-      switch (dir) {
-        case 0: newP2 = { x: p1.x, y: p1.y + 1 }; break;
-        case 1: newP2 = { x: p1.x + 1, y: p1.y }; break;
-        case 2: newP2 = { x: p1.x, y: p1.y - 1 }; break;
-        case 3: newP2 = { x: p1.x - 1, y: p1.y }; break;
+      const [pivot, target] = current.blocks;
+      const dx = target.x - pivot.x;
+      const dy = target.y - pivot.y;
+      const rotated = { x: pivot.x - dy, y: pivot.y + dx, color: target.color };
+      const test = [pivot, rotated];
+      if (valid(test)) current.blocks[1] = rotated;
+    }
+
+    function valid(blocks) {
+      return blocks.every(b => b.x >= 0 && b.x < COLS && b.y >= 0 && b.y < ROWS && (!board[b.y][b.x]));
+    }
+
+    function freeze() {
+      for (const b of current.blocks) board[b.y][b.x] = b.color;
+      removeChains();
+      current = newPuyo();
+      if (!valid(current.blocks)) {
+        alert("ゲームオーバー");
+        board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
       }
-      if (valid(newP2.x, newP2.y)) {
-        current.puyos[1] = { ...newP2, color: p2.color };
-        current.dir = dir;
-      }
     }
 
-    function valid(x, y) {
-      return x >= 0 && x < COLS && y >= 0 && y < ROWS && (grid[y][x] == null);
-    }
-
-    function place() {
-      for (const p of current.puyos) grid[p.y][p.x] = p.color;
-      current = null;
-    }
-
-    function clearLines() {
-      const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-      for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-          if (grid[y][x] != null && !visited[y][x]) {
-            const group = [];
-            floodFill(x, y, grid[y][x], group, visited);
-            if (group.length >= 4) {
-              for (const { x, y } of group) grid[y][x] = null;
+    function removeChains() {
+      let chains;
+      do {
+        chains = [];
+        const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+        const directions = [[1,0],[0,1],[-1,0],[0,-1]];
+        for (let y = 0; y < ROWS; y++) {
+          for (let x = 0; x < COLS; x++) {
+            if (!board[y][x] || visited[y][x]) continue;
+            const color = board[y][x];
+            const queue = [[x, y]];
+            const chain = [];
+            while (queue.length) {
+              const [cx, cy] = queue.pop();
+              if (visited[cy][cx]) continue;
+              visited[cy][cx] = true;
+              chain.push([cx, cy]);
+              for (const [dx, dy] of directions) {
+                const nx = cx + dx;
+                const ny = cy + dy;
+                if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS &&
+                    !visited[ny][nx] && board[ny][nx] === color) {
+                  queue.push([nx, ny]);
+                }
+              }
+            }
+            if (chain.length >= 4) {
+              chains.push(...chain);
             }
           }
         }
-      }
-      dropPuyos();
-    }
 
-    function floodFill(x, y, color, group, visited) {
-      if (x < 0 || y < 0 || x >= COLS || y >= ROWS || visited[y][x] || grid[y][x] !== color) return;
-      visited[y][x] = true;
-      group.push({ x, y });
-      floodFill(x + 1, y, color, group, visited);
-      floodFill(x - 1, y, color, group, visited);
-      floodFill(x, y + 1, color, group, visited);
-      floodFill(x, y - 1, color, group, visited);
-    }
+        // 消去処理
+        for (const [x, y] of chains) {
+          board[y][x] = null;
+        }
 
-    function dropPuyos() {
-      for (let x = 0; x < COLS; x++) {
-        for (let y = ROWS - 1; y > 0; y--) {
-          if (grid[y][x] == null && grid[y - 1][x] != null) {
-            grid[y][x] = grid[y - 1][x];
-            grid[y - 1][x] = null;
-            y = ROWS; // recheck
+        // 重力処理：上のぷよを落とす
+        for (let x = 0; x < COLS; x++) {
+          let column = [];
+          for (let y = ROWS - 1; y >= 0; y--) {
+            if (board[y][x]) {
+              column.push(board[y][x]);
+            }
+          }
+          for (let y = ROWS - 1; y >= 0; y--) {
+            board[y][x] = column[ROWS - 1 - y] || null;
           }
         }
-      }
+
+      } while (chains.length > 0);
     }
 
-    function gameLoop() {
-      if (!paused) move(0, 1);
+    function tick() {
+      if (!current || isPaused) return;
+      const moved = current.blocks.map(b => ({ ...b, y: b.y + 1 }));
+      if (valid(moved)) current.blocks = moved;
+      else {
+        freeze();
+      }
       draw();
     }
 
-    function startGame() {
-      spawn();
-      interval = setInterval(gameLoop, 500);
-    }
+    document.getElementById("left").onclick = () => move(-1, 0);
+    document.getElementById("right").onclick = () => move(1, 0);
+    document.getElementById("down").onmousedown = () => interval = setInterval(() => move(0, 1), 50);
+    document.getElementById("down").onmouseup = () => clearInterval(interval);
+    document.getElementById("rotate").onclick = rotate;
+    document.getElementById("pauseBtn").onclick = () => isPaused = !isPaused;
 
-    function pauseGame() {
-      paused = !paused;
-      document.getElementById('pauseBtn').textContent = paused ? '▶' : '⏸';
-    }
-
-    document.getElementById('left').onclick = () => move(-1, 0);
-    document.getElementById('right').onclick = () => move(1, 0);
-    document.getElementById('down').onclick = () => move(0, 1);
-    document.getElementById('up').onclick = () => rotate();
-    document.getElementById('rotate').onclick = () => rotate();
-    document.getElementById('pauseBtn').onclick = () => pauseGame();
-
-    window.onload = () => startGame();
+    current = newPuyo();
+    draw();
+    setInterval(tick, FALL_INTERVAL);
   </script>
 </body>
 </html>
