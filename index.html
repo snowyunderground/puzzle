@@ -5,21 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ぷよぷよ風ゲーム</title>
   <style>
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
       background: #000;
       color: #fff;
       font-family: sans-serif;
       overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
     canvas {
+      display: block;
+      margin: 10px auto;
       background: #222;
-      margin-top: 10px;
     }
     .controls {
+      display: none;
+    }
+    .mobile .controls {
       display: flex;
       justify-content: space-between;
       width: 100vw;
@@ -29,8 +34,8 @@
     .dpad, .buttons {
       display: flex;
       flex-wrap: wrap;
-      width: 40vw;
-      max-width: 200px;
+      width: 45vw;
+      max-width: 220px;
       justify-content: center;
     }
     .buttons {
@@ -39,25 +44,21 @@
     }
     button {
       margin: 5px;
-      padding: 15px 20px;
-      font-size: 1.2em;
-      border-radius: 10px;
+      padding: 20px 25px;
+      font-size: 1.5em;
+      border-radius: 12px;
       border: none;
       background: #444;
       color: #fff;
-      touch-action: manipulation;
-    }
-    #pauseBtn {
-      margin-top: 10px;
     }
     #instructions {
-      position: fixed;
-      bottom: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: #fff;
-      font-size: 1em;
+      display: none;
       text-align: center;
+      font-size: 0.9em;
+      margin-top: 5px;
+    }
+    .desktop #instructions {
+      display: block;
     }
   </style>
 </head>
@@ -75,16 +76,18 @@
     </div>
   </div>
   <div id="instructions">
-    <p>操作方法：</p>
-    <p>左: ← | 右: → | 下: ↓ | 回転: スペース | 一時停止: P</p>
+    ←/→ : 移動　↓ : 高速落下　Z : 回転　P : 一時停止
   </div>
   <script>
+    const isMobile = /iPhone|iPad|Android/.test(navigator.userAgent);
+    document.body.classList.add(isMobile ? 'mobile' : 'desktop');
+
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
     const COLS = 6;
     const ROWS = 12;
     const BLOCK_SIZE = 32;
-    const FALL_INTERVAL = 800; // ゆっくりに
+    const FALL_INTERVAL = 800;
     const COLORS = ["red", "blue", "green", "yellow"];
     const IMG_URLS = {
       red: "https://i.imgur.com/Kr5JwfV.png",
@@ -100,7 +103,10 @@
     }
 
     let board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    let current, interval, isPaused = false;
+    let current = null;
+    let isPaused = false;
+    let tickInterval;
+    let inputGrace = false;
 
     function newPuyo() {
       const c1 = COLORS[Math.floor(Math.random() * COLORS.length)];
@@ -129,6 +135,10 @@
       }
     }
 
+    function valid(blocks) {
+      return blocks.every(b => b.x >= 0 && b.x < COLS && b.y >= 0 && b.y < ROWS && (!board[b.y][b.x]));
+    }
+
     function move(dx, dy) {
       if (!current) return;
       const moved = current.blocks.map(b => ({ ...b, x: b.x + dx, y: b.y + dy }));
@@ -139,107 +149,97 @@
       const [pivot, target] = current.blocks;
       const dx = target.x - pivot.x;
       const dy = target.y - pivot.y;
-      const rotated = { x: pivot.x - dy, y: pivot.y + dx, color: target.color };
+      let rotated = { x: pivot.x - dy, y: pivot.y + dx, color: target.color };
       const test = [pivot, rotated];
-      if (valid(test)) current.blocks[1] = rotated;
-    }
-
-    function valid(blocks) {
-      return blocks.every(b => b.x >= 0 && b.x < COLS && b.y >= 0 && b.y < ROWS && (!board[b.y][b.x]));
+      if (!valid(test)) {
+        rotated.x += (rotated.x < 0) ? 1 : -1;
+      }
+      if (valid([pivot, rotated])) current.blocks[1] = rotated;
     }
 
     function freeze() {
       for (const b of current.blocks) board[b.y][b.x] = b.color;
+      current = null;
+      applyGravity();
       removeChains();
-      current = newPuyo();
-      if (!valid(current.blocks)) {
-        alert("ゲームオーバー");
-        board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+      setTimeout(() => {
+        current = newPuyo();
+        if (!valid(current.blocks)) {
+          alert("ゲームオーバー");
+          board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+        }
+        draw();
+      }, 200);
+    }
+
+    function applyGravity() {
+      for (let x = 0; x < COLS; x++) {
+        for (let y = ROWS - 2; y >= 0; y--) {
+          if (board[y][x] && !board[y + 1][x]) {
+            let ny = y;
+            while (ny + 1 < ROWS && !board[ny + 1][x]) {
+              board[ny + 1][x] = board[ny][x];
+              board[ny][x] = null;
+              ny++;
+            }
+          }
+        }
       }
     }
 
     function removeChains() {
+      const directions = [[1,0],[0,1],[1,1],[-1,1]];
+      const toClear = [];
       const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-      const directions = [[1,0],[0,1],[-1,0],[0,-1]];
-
-      function checkChain(x, y, color) {
-        const queue = [[x, y]];
-        const chain = [];
-        while (queue.length) {
-          const [cx, cy] = queue.pop();
-          if (visited[cy][cx]) continue;
-          visited[cy][cx] = true;
-          chain.push([cx, cy]);
-          for (const [dx, dy] of directions) {
-            const nx = cx + dx;
-            const ny = cy + dy;
-            if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS && !visited[ny][nx] && board[ny][nx] === color) {
-              queue.push([nx, ny]);
-            }
-          }
-        }
-        return chain.length >= 4 ? chain : [];
-      }
-
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
-          if (!board[y][x]) continue;
           const color = board[y][x];
-          const chain = checkChain(x, y, color);
-          if (chain.length >= 4) {
-            for (const [cx, cy] of chain) board[cy][cx] = null;
+          if (!color || visited[y][x]) continue;
+          for (const [dx, dy] of directions) {
+            const chain = [];
+            for (let i = 0; i < 4; i++) {
+              const nx = x + dx * i;
+              const ny = y + dy * i;
+              if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS || board[ny][nx] !== color) break;
+              chain.push([nx, ny]);
+            }
+            if (chain.length === 4) chain.forEach(([cx, cy]) => { visited[cy][cx] = true; toClear.push([cx, cy]); });
           }
         }
       }
+      for (const [x, y] of toClear) board[y][x] = null;
     }
 
     function tick() {
-      if (!current || isPaused) return;
-
+      if (isPaused) return;
+      if (!current) return;
       const moved = current.blocks.map(b => ({ ...b, y: b.y + 1 }));
-      if (valid(moved)) current.blocks = moved;
-      else {
+      if (valid(moved)) {
+        current.blocks = moved;
+      } else {
         freeze();
       }
-
       draw();
     }
 
-    document.getElementById("left").addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      move(-1, 0);
-    });
-    document.getElementById("right").addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      move(1, 0);
-    });
-    document.getElementById("down").addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      interval = setInterval(() => move(0, 1), 50);
-    });
-    document.getElementById("down").addEventListener("touchend", (e) => {
-      e.preventDefault();
-      clearInterval(interval);
-    });
-    document.getElementById("rotate").addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      rotate();
-    });
-    document.getElementById("pauseBtn").addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      isPaused = !isPaused;
-    });
+    function setupInput() {
+      document.getElementById("left").onclick = () => move(-1, 0);
+      document.getElementById("right").onclick = () => move(1, 0);
+      document.getElementById("down").onmousedown = () => tickInterval = setInterval(() => move(0, 1), 50);
+      document.getElementById("down").onmouseup = () => clearInterval(tickInterval);
+      document.getElementById("rotate").onclick = rotate;
+      document.getElementById("pauseBtn").onclick = () => isPaused = !isPaused;
 
-    // PCの場合のキーボード操作
-    window.addEventListener("keydown", (e) => {
-      if (isPaused) return;
-      if (e.key === "ArrowLeft") move(-1, 0);
-      if (e.key === "ArrowRight") move(1, 0);
-      if (e.key === "ArrowDown") move(0, 1);
-      if (e.key === " ") rotate(); // スペースで回転
-      if (e.key === "p" || e.key === "P") isPaused = !isPaused; // Pで一時停止
-    });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") move(-1, 0);
+        if (e.key === "ArrowRight") move(1, 0);
+        if (e.key === "ArrowDown") move(0, 1);
+        if (e.key.toLowerCase() === "z") rotate();
+        if (e.key.toLowerCase() === "p") isPaused = !isPaused;
+      });
+    }
 
+    setupInput();
     current = newPuyo();
     draw();
     setInterval(tick, FALL_INTERVAL);
