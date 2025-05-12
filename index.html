@@ -157,32 +157,34 @@
     function freeze() {
       for (const b of current.blocks) board[b.y][b.x] = b.color;
       applyGravity();
-      removeChains();
-      current = newPuyo();
-      if (!valid(current.blocks)) {
-        alert("ゲームオーバー");
-        board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-      }
-    }
-
-    function applyGravity() {
-      for (let y = ROWS - 2; y >= 0; y--) {
-        for (let x = 0; x < COLS; x++) {
-          if (board[y][x] && !board[y + 1][x]) {
-            let ny = y;
-            while (ny + 1 < ROWS && !board[ny + 1][x]) {
-              board[ny + 1][x] = board[ny][x];
-              board[ny][x] = null;
-              ny++;
-            }
-          }
+      if (!removeChains()) {
+        current = newPuyo();
+        if (!valid(current.blocks)) {
+          alert("ゲームオーバー");
+          board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
         }
       }
     }
 
+    function applyGravity() {
+      let moved;
+      do {
+        moved = false;
+        for (let y = ROWS - 2; y >= 0; y--) {
+          for (let x = 0; x < COLS; x++) {
+            if (board[y][x] && !board[y + 1][x]) {
+              board[y + 1][x] = board[y][x];
+              board[y][x] = null;
+              moved = true;
+            }
+          }
+        }
+      } while (moved);
+    }
+
     function removeChains() {
       const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-      const directions = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[-1,-1],[1,-1],[-1,1]];
+      const directions = [[1,0],[0,1],[-1,0],[0,-1]];
       let removed = false;
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
@@ -209,7 +211,11 @@
           }
         }
       }
-      if (removed) applyGravity();
+      if (removed) {
+        applyGravity();
+        setTimeout(removeChains, 100);
+      }
+      return removed;
     }
 
     function tick() {
