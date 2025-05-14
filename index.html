@@ -10,135 +10,80 @@
       background: #000;
       color: #fff;
       font-family: sans-serif;
-      overflow: hidden;
       display: flex;
       flex-direction: column;
+      align-items: center;
+    }
+    .header {
+      text-align: center;
+      margin: 10px;
+    }
+    #score, #chain {
+      font-size: 1.5em;
+      margin: 5px;
+    }
+    #game-container {
+      position: relative;
+      display: flex;
+      justify-content: center;
       align-items: center;
     }
     canvas {
       background: #222;
-      margin-top: 10px;
+      width: 288px;
+      height: 576px;
     }
-    .controls {
+    #start-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
       display: flex;
-      justify-content: space-between;
-      width: 100vw;
-      padding: 10px;
-      box-sizing: border-box;
-    }
-    .dpad, .buttons {
-      display: flex;
-      flex-wrap: wrap;
-      width: 40vw;
-      max-width: 200px;
       justify-content: center;
-    }
-    .buttons {
-      flex-direction: column;
       align-items: center;
+      flex-direction: column;
+      z-index: 10;
     }
-    button {
-      margin: 5px;
-      padding: 20px 25px;
-      font-size: 1.5em;
-      border-radius: 10px;
-      border: none;
-      background: #444;
-      color: #fff;
-      touch-action: manipulation;
-      -webkit-user-select: none;
-      user-select: none;
-    }
-    #pauseBtn {
-      margin-top: 10px;
-    }
-    .instructions {
-      display: none;
-      margin-top: 10px;
-      font-size: 0.9em;
-    }
-    .gameover {
-      font-size: 1.5em;
-      color: red;
-      display: none;
-    }
-    #startBtn {
+    #start-button {
+      font-size: 2em;
       padding: 20px 40px;
-      font-size: 1.5em;
-      background: #444;
+      background: #8800ff;
       color: #fff;
-      border-radius: 10px;
-    }
-    @media (hover: hover) and (pointer: fine) {
-      .instructions {
-        display: block;
-      }
+      border: none;
+      border-radius: 15px;
     }
   </style>
 </head>
 <body>
-  <!-- ゲームスタート画面 -->
-  <div id="startScreen">
-    <button id="startBtn">ゲームスタート</button>
+  <div class="header">
+    <div id="score">スコア: 0</div>
+    <div id="chain">連鎖: 0</div>
   </div>
-
-  <!-- ゲームオーバー画面 -->
-  <div class="gameover" id="gameover">
-    ゲームオーバー！<br> スコア: <span id="finalScore"></span>
-  </div>
-
-  <!-- ゲームキャンバス -->
-  <canvas id="game" width="192" height="384"></canvas>
-
-  <!-- 操作ボタン -->
-  <div class="controls">
-    <div class="dpad">
-      <button id="left">←</button>
-      <button id="right">→</button>
-      <button id="down">↓</button>
+  <div id="game-container">
+    <canvas id="game" width="192" height="384"></canvas>
+    <div id="start-screen">
+      <button id="start-button">ゲームスタート</button>
     </div>
-    <div class="buttons">
-      <button id="rotate">⟳</button>
-      <button id="pauseBtn">⏸</button>
-    </div>
-  </div>
-
-  <!-- 操作説明 -->
-  <div class="instructions">
-    操作：← → ↓ キーで移動、Zキーで回転、Pキーで一時停止
   </div>
 
   <script>
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d");
+
     const COLS = 6;
     const ROWS = 12;
     const BLOCK_SIZE = 32;
-    const FALL_INTERVAL = 800;
-    const COLORS = ["red", "blue", "green", "yellow", "purple", "cyan"];
-    const IMG_URLS = {
-      red: "https://i.imgur.com/Kr5JwfV.png",
-      blue: "https://i.imgur.com/fFdbCsG.png",
-      green: "https://i.imgur.com/zY4wQYr.png",
-      yellow: "https://i.imgur.com/QlwIuCf.png",
-      purple: "https://i.imgur.com/zY4wQYr.png",
-      cyan: "https://i.imgur.com/QlwIuCf.png"
-    };
-    const images = {};
-    for (const color in IMG_URLS) {
-      const img = new Image();
-      img.src = IMG_URLS[color];
-      images[color] = img;
+    const FALL_INTERVAL = 600;
+    const COLORS = ["red", "blue", "green", "yellow"];
+    const scoreEl = document.getElementById("score");
+    const chainEl = document.getElementById("chain");
+    let board, current, interval, isPaused = true, score = 0, chainCount = 0;
+
+    function createBoard() {
+      return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
     }
-
-    let board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    let current, interval, isPaused = false, lockTimer = 0, score = 0, chains = 0;
-
-    const soundEffects = {
-      fall: new Audio('fall.wav'),
-      remove: new Audio('remove.wav'),
-      gameOver: new Audio('game_over.wav')
-    };
 
     function newPuyo() {
       const c1 = COLORS[Math.floor(Math.random() * COLORS.length)];
@@ -152,30 +97,36 @@
       };
     }
 
+    function drawBlock(x, y, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+    }
+
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
-          const color = board[y][x];
-          if (color) ctx.drawImage(images[color], x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+          if (board[y][x]) drawBlock(x, y, board[y][x]);
         }
       }
       if (current) {
-        for (const b of current.blocks) {
-          ctx.drawImage(images[b.color], b.x * BLOCK_SIZE, b.y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-        }
+        current.blocks.forEach(b => drawBlock(b.x, b.y, b.color));
       }
+    }
 
-      ctx.fillStyle = "#fff";
-      ctx.font = "20px sans-serif";
-      ctx.fillText(`スコア: ${score}`, 10, 20);
-      ctx.fillText(`連鎖: ${chains}`, 10, 50);
+    function valid(blocks) {
+      return blocks.every(b =>
+        b.x >= 0 && b.x < COLS && b.y >= 0 && b.y < ROWS && (!board[b.y][b.x])
+      );
     }
 
     function move(dx, dy) {
-      if (!current) return;
       const moved = current.blocks.map(b => ({ ...b, x: b.x + dx, y: b.y + dy }));
-      if (valid(moved)) current.blocks = moved;
+      if (valid(moved)) {
+        current.blocks = moved;
+        return true;
+      }
+      return false;
     }
 
     function rotate() {
@@ -183,56 +134,101 @@
       const dx = target.x - pivot.x;
       const dy = target.y - pivot.y;
       const rotated = { x: pivot.x - dy, y: pivot.y + dx, color: target.color };
-      const test = [pivot, rotated];
-      if (valid(test)) current.blocks = test;
+      const newBlocks = [pivot, rotated];
+      if (valid(newBlocks)) current.blocks[1] = rotated;
     }
 
-    function valid(blocks) {
-      return blocks.every(({ x, y }) => x >= 0 && x < COLS && y < ROWS && (!board[y] || !board[y][x]));
+    function freeze() {
+      for (const b of current.blocks) {
+        if (b.y >= 0) board[b.y][b.x] = b.color;
+      }
+      checkChains();
+      current = newPuyo();
+      if (!valid(current.blocks)) {
+        alert("ゲームオーバー");
+        isPaused = true;
+        clearInterval(interval);
+        document.getElementById("start-screen").style.display = "flex";
+      }
     }
 
-    function lockPuyo() {
-      current.blocks.forEach(b => board[b.y][b.x] = b.color);
-      current = null;
-      checkLines();
-      score += 10; // Update score
-    }
-
-    function checkLines() {
+    function checkChains() {
+      let removed = false;
+      const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
       for (let y = 0; y < ROWS; y++) {
-        if (board[y].every(cell => cell)) {
-          score += 50; // Line clear score
-          board.splice(y, 1);
-          board.unshift(Array(COLS).fill(null));
-          chains++; // Increment chain count
+        for (let x = 0; x < COLS; x++) {
+          if (!board[y][x] || visited[y][x]) continue;
+          const color = board[y][x];
+          const chain = [];
+          const queue = [[x, y]];
+          while (queue.length) {
+            const [cx, cy] = queue.pop();
+            if (
+              cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS ||
+              board[cy][cx] !== color || visited[cy][cx]
+            ) continue;
+            visited[cy][cx] = true;
+            chain.push([cx, cy]);
+            queue.push([cx+1, cy], [cx-1, cy], [cx, cy+1], [cx, cy-1]);
+          }
+          if (chain.length >= 4) {
+            chain.forEach(([cx, cy]) => board[cy][cx] = null);
+            score += chain.length * 10;
+            chainCount++;
+            removed = true;
+          }
+        }
+      }
+      if (removed) {
+        applyGravity();
+        setTimeout(checkChains, 200);
+      } else {
+        chainCount = 0;
+      }
+      scoreEl.textContent = "スコア: " + score;
+      chainEl.textContent = "連鎖: " + chainCount;
+    }
+
+    function applyGravity() {
+      for (let y = ROWS - 2; y >= 0; y--) {
+        for (let x = 0; x < COLS; x++) {
+          if (board[y][x] && !board[y+1][x]) {
+            let ny = y;
+            while (ny + 1 < ROWS && !board[ny+1][x]) {
+              board[ny+1][x] = board[ny][x];
+              board[ny][x] = null;
+              ny++;
+            }
+          }
         }
       }
     }
 
-    function gameOver() {
-      clearInterval(interval);
-      document.getElementById("gameover").style.display = "block";
-      document.getElementById("finalScore").textContent = score;
-      soundEffects.gameOver.play();
+    function tick() {
+      if (!current || isPaused) return;
+      if (!move(0, 1)) {
+        freeze();
+      }
+      draw();
     }
 
-    document.getElementById("startBtn").addEventListener("click", () => {
-      document.getElementById("startScreen").style.display = "none";
-      interval = setInterval(() => {
-        if (!isPaused) {
-          move(0, 1);
-          draw();
-        }
-      }, FALL_INTERVAL);
-      current = newPuyo();
-      draw();
+    document.addEventListener("keydown", e => {
+      if (isPaused) return;
+      if (e.key === "ArrowLeft") move(-1, 0);
+      if (e.key === "ArrowRight") move(1, 0);
+      if (e.key === "ArrowDown") move(0, 1);
+      if (e.key.toLowerCase() === "z") rotate();
     });
 
-    document.getElementById("left").addEventListener("click", () => move(-1, 0));
-    document.getElementById("right").addEventListener("click", () => move(1, 0));
-    document.getElementById("down").addEventListener("click", () => move(0, 1));
-    document.getElementById("rotate").addEventListener("click", rotate);
-    document.getElementById("pauseBtn").addEventListener("click", () => isPaused = !isPaused);
+    document.getElementById("start-button").onclick = () => {
+      document.getElementById("start-screen").style.display = "none";
+      board = createBoard();
+      current = newPuyo();
+      isPaused = false;
+      score = 0;
+      chainCount = 0;
+      interval = setInterval(tick, FALL_INTERVAL);
+    };
   </script>
 </body>
 </html>
