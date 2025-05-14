@@ -3,232 +3,184 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ぷよぷよ風ゲーム</title>
+  <title>Puyo Game</title>
   <style>
     body {
       margin: 0;
-      background: #000;
-      color: #fff;
+      background-image: url('https://i.imgur.com/vhzGUY2.png');
+      background-size: cover;
       font-family: sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
     }
-    .header {
-      text-align: center;
-      margin: 10px;
-    }
-    #score, #chain {
-      font-size: 1.5em;
-      margin: 5px;
-    }
-    #game-container {
-      position: relative;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
     canvas {
-      background: #222;
-      width: 288px;
-      height: 576px;
+      image-rendering: pixelated;
+      border: 4px solid #fff;
+      background-color: rgba(0,0,0,0.6);
+    }
+    #controls, #pc-controls {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      margin: 5px;
+      padding: 15px;
+      font-size: 16px;
+      border-radius: 10px;
+      border: none;
+      background: #333;
+      color: white;
     }
     #start-screen {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-direction: column;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.7);
+      padding: 40px;
+      border-radius: 20px;
+      color: white;
       z-index: 10;
+      text-align: center;
     }
-    #start-button {
-      font-size: 2em;
-      padding: 20px 40px;
-      background: #8800ff;
-      color: #fff;
-      border: none;
-      border-radius: 15px;
+    #score {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 10px;
+      border-radius: 10px;
+      font-size: 18px;
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div id="score">スコア: 0</div>
-    <div id="chain">連鎖: 0</div>
+  <div id="start-screen">
+    <h1>ぷよゲーム</h1>
+    <button onclick="startGame()">スタート</button>
   </div>
-  <div id="game-container">
-    <canvas id="game" width="192" height="384"></canvas>
-    <div id="start-screen">
-      <button id="start-button">ゲームスタート</button>
-    </div>
+  <div id="score">スコア: 0</div>
+  <canvas id="game" width="320" height="640"></canvas>
+  <div id="controls">
+    <button onclick="moveLeft()">←</button>
+    <button onclick="rotate()">⟳</button>
+    <button onclick="moveRight()">→</button>
+    <button onclick="drop()">↓</button>
   </div>
-
+  <div id="pc-controls">
+    <p>PC操作：←→ 移動／↓ 落下／Z 回転</p>
+  </div>
   <script>
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const scoreElement = document.getElementById('score');
 
-    const COLS = 6;
-    const ROWS = 12;
-    const BLOCK_SIZE = 32;
-    const FALL_INTERVAL = 600;
-    const COLORS = ["red", "blue", "green", "yellow"];
-    const scoreEl = document.getElementById("score");
-    const chainEl = document.getElementById("chain");
-    let board, current, interval, isPaused = true, score = 0, chainCount = 0;
+    const cols = 6;
+    const rows = 13;
+    const blockSize = 48;
+    const colors = ['red', 'blue', 'green', 'yellow', 'purple', 'cyan'];
+    const images = {
+      red: new Image(),
+      blue: new Image(),
+      green: new Image(),
+      yellow: new Image(),
+      purple: new Image(),
+      cyan: new Image(),
+    };
+    images.red.src = 'https://i.imgur.com/Kr5JwfV.png';
+    images.blue.src = 'https://i.imgur.com/fFdbCsG.png';
+    images.green.src = 'https://i.imgur.com/zY4wQYr.png';
+    images.yellow.src = 'https://i.imgur.com/QlwIuCf.png';
+    images.purple.src = 'https://i.imgur.com/zY4wQYr.png';
+    images.cyan.src = 'https://i.imgur.com/QlwIuCf.png';
 
-    function createBoard() {
-      return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
-    }
+    let board, currentPuyo, nextPuyo, score = 0;
 
-    function newPuyo() {
-      const c1 = COLORS[Math.floor(Math.random() * COLORS.length)];
-      const c2 = COLORS[Math.floor(Math.random() * COLORS.length)];
-      return {
-        blocks: [
-          { x: 2, y: 0, color: c1 },
-          { x: 2, y: 1, color: c2 }
-        ],
-        rotation: 0
-      };
-    }
-
-    function drawBlock(x, y, color) {
-      ctx.fillStyle = color;
-      ctx.fillRect(x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE - 1, BLOCK_SIZE - 1);
+    function resetBoard() {
+      board = Array.from({ length: rows }, () => Array(cols).fill(null));
     }
 
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-          if (board[y][x]) drawBlock(x, y, board[y][x]);
-        }
-      }
-      if (current) {
-        current.blocks.forEach(b => drawBlock(b.x, b.y, b.color));
-      }
-    }
-
-    function valid(blocks) {
-      return blocks.every(b =>
-        b.x >= 0 && b.x < COLS && b.y >= 0 && b.y < ROWS && (!board[b.y][b.x])
-      );
-    }
-
-    function move(dx, dy) {
-      const moved = current.blocks.map(b => ({ ...b, x: b.x + dx, y: b.y + dy }));
-      if (valid(moved)) {
-        current.blocks = moved;
-        return true;
-      }
-      return false;
-    }
-
-    function rotate() {
-      const [pivot, target] = current.blocks;
-      const dx = target.x - pivot.x;
-      const dy = target.y - pivot.y;
-      const rotated = { x: pivot.x - dy, y: pivot.y + dx, color: target.color };
-      const newBlocks = [pivot, rotated];
-      if (valid(newBlocks)) current.blocks[1] = rotated;
-    }
-
-    function freeze() {
-      for (const b of current.blocks) {
-        if (b.y >= 0) board[b.y][b.x] = b.color;
-      }
-      checkChains();
-      current = newPuyo();
-      if (!valid(current.blocks)) {
-        alert("ゲームオーバー");
-        isPaused = true;
-        clearInterval(interval);
-        document.getElementById("start-screen").style.display = "flex";
-      }
-    }
-
-    function checkChains() {
-      let removed = false;
-      const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-      for (let y = 0; y < ROWS; y++) {
-        for (let x = 0; x < COLS; x++) {
-          if (!board[y][x] || visited[y][x]) continue;
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
           const color = board[y][x];
-          const chain = [];
-          const queue = [[x, y]];
-          while (queue.length) {
-            const [cx, cy] = queue.pop();
-            if (
-              cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS ||
-              board[cy][cx] !== color || visited[cy][cx]
-            ) continue;
-            visited[cy][cx] = true;
-            chain.push([cx, cy]);
-            queue.push([cx+1, cy], [cx-1, cy], [cx, cy+1], [cx, cy-1]);
-          }
-          if (chain.length >= 4) {
-            chain.forEach(([cx, cy]) => board[cy][cx] = null);
-            score += chain.length * 10;
-            chainCount++;
-            removed = true;
-          }
+          if (color) ctx.drawImage(images[color], x * blockSize, y * blockSize, blockSize, blockSize);
         }
       }
-      if (removed) {
-        applyGravity();
-        setTimeout(checkChains, 200);
+      if (currentPuyo) {
+        ctx.drawImage(images[currentPuyo.color1], currentPuyo.x * blockSize, currentPuyo.y * blockSize, blockSize, blockSize);
+        ctx.drawImage(images[currentPuyo.color2], currentPuyo.x * blockSize, (currentPuyo.y - 1) * blockSize, blockSize, blockSize);
+      }
+    }
+
+    function spawnPuyo() {
+      const c1 = colors[Math.floor(Math.random() * colors.length)];
+      const c2 = colors[Math.floor(Math.random() * colors.length)];
+      currentPuyo = { x: 2, y: 1, color1: c1, color2: c2 };
+    }
+
+    function update() {
+      if (!currentPuyo) {
+        spawnPuyo();
       } else {
-        chainCount = 0;
-      }
-      scoreEl.textContent = "スコア: " + score;
-      chainEl.textContent = "連鎖: " + chainCount;
-    }
-
-    function applyGravity() {
-      for (let y = ROWS - 2; y >= 0; y--) {
-        for (let x = 0; x < COLS; x++) {
-          if (board[y][x] && !board[y+1][x]) {
-            let ny = y;
-            while (ny + 1 < ROWS && !board[ny+1][x]) {
-              board[ny+1][x] = board[ny][x];
-              board[ny][x] = null;
-              ny++;
-            }
-          }
+        if (canMove(currentPuyo, 0, 1)) {
+          currentPuyo.y++;
+        } else {
+          board[currentPuyo.y][currentPuyo.x] = currentPuyo.color1;
+          board[currentPuyo.y - 1][currentPuyo.x] = currentPuyo.color2;
+          currentPuyo = null;
+          checkMatches();
         }
-      }
-    }
-
-    function tick() {
-      if (!current || isPaused) return;
-      if (!move(0, 1)) {
-        freeze();
       }
       draw();
     }
 
-    document.addEventListener("keydown", e => {
-      if (isPaused) return;
-      if (e.key === "ArrowLeft") move(-1, 0);
-      if (e.key === "ArrowRight") move(1, 0);
-      if (e.key === "ArrowDown") move(0, 1);
-      if (e.key.toLowerCase() === "z") rotate();
-    });
+    function canMove(puyo, dx, dy) {
+      const y1 = puyo.y;
+      const y2 = puyo.y - 1;
+      return [y1, y2].every(y => {
+        const newY = y + dy;
+        return newY < rows && !board[newY]?.[puyo.x];
+      });
+    }
 
-    document.getElementById("start-button").onclick = () => {
-      document.getElementById("start-screen").style.display = "none";
-      board = createBoard();
-      current = newPuyo();
-      isPaused = false;
-      score = 0;
-      chainCount = 0;
-      interval = setInterval(tick, FALL_INTERVAL);
-    };
+    function moveLeft() {
+      if (currentPuyo && currentPuyo.x > 0 && !board[currentPuyo.y]?.[currentPuyo.x - 1] && !board[currentPuyo.y - 1]?.[currentPuyo.x - 1]) currentPuyo.x--;
+    }
+    function moveRight() {
+      if (currentPuyo && currentPuyo.x < cols - 1 && !board[currentPuyo.y]?.[currentPuyo.x + 1] && !board[currentPuyo.y - 1]?.[currentPuyo.x + 1]) currentPuyo.x++;
+    }
+    function drop() {
+      while (canMove(currentPuyo, 0, 1)) currentPuyo.y++;
+    }
+    function rotate() {
+      // 簡易実装：上側と下側を入れ替え
+      [currentPuyo.color1, currentPuyo.color2] = [currentPuyo.color2, currentPuyo.color1];
+    }
+
+    function checkMatches() {
+      // 仮実装：消える処理はあとで追加
+      score += 10;
+      scoreElement.textContent = `スコア: ${score}`;
+    }
+
+    function startGame() {
+      document.getElementById('start-screen').style.display = 'none';
+      resetBoard();
+      setInterval(update, 500);
+    }
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft') moveLeft();
+      if (e.key === 'ArrowRight') moveRight();
+      if (e.key === 'ArrowDown') drop();
+      if (e.key === 'z') rotate();
+    });
   </script>
 </body>
 </html>
